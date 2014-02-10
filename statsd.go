@@ -34,24 +34,39 @@ import (
 	"time"
 )
 
-var DefaultClient *Client
+var DefaultClient Stater
 var DefaultRate float32 = 1.0
 
 var (
-	ConnectionClosedErr = errors.New("Connection Closed")
-	ConnectionWriteErr  = errors.New("Wrote no bytes")
+	ErrConnectionClosed = errors.New("Connection Closed")
+	ErrConnectionWrite  = errors.New("Wrote no bytes")
 )
 
-type Client struct {
+type Stater interface {
+	Count(stat string, rate ...float32) error
+	Measure(stat string, delta time.Duration, rate ...float32) error
+	Gauge(stat string, value interface{}) error
+	Close() error
+}
+
+// implements Stater
+type NoopClient struct{}
+
+// implements Stater
+type RemoteClient struct {
 	buf    *bufio.ReadWriter // need to read for tests
 	conn   *net.Conn
 	prefix string
 	mutex  sync.Mutex
 }
 
+func init() {
+	DefaultClient = &NoopClient{}
+}
+
 // Creates a new UDP connection to the given server. The prefix
 // is optional and will be prepended to any stat using this client.
-func New(addr string, prefix ...string) (*Client, error) {
+func New(addr string, prefix ...string) (Stater, error) {
 	conn, err := net.Dial("udp", addr)
 	if err != nil {
 		return nil, err
@@ -63,7 +78,7 @@ func New(addr string, prefix ...string) (*Client, error) {
 	}
 
 	buf := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
-	client := &Client{buf: buf, conn: &conn, prefix: p}
+	client := &RemoteClient{buf: buf, conn: &conn, prefix: p}
 
 	return client, nil
 }
@@ -96,29 +111,22 @@ func Gauge(stat string, value interface{}) error {
 	return DefaultClient.Gauge(stat, value)
 }
 
-func (s *Client) Close() error {
-	s.buf.Flush()
-	s.buf = nil
-
-	return (*s.conn).Close()
-}
-
 // Count adds 1 to the provided stat. Rate is optional,
 // default is statsd.DefaultRate which is set as 1.0.
 // A rate value of 0.1 will only send one in every 10 calls to the
 // server. The statsd server will adjust its aggregation accordingly.
-func (s *Client) Count(stat string, rate ...float32) error {
+func (self *RemoteClient) Count(stat string, rate ...float32) error {
 	r := DefaultRate
 	if len(rate) > 0 {
 		r = rate[0]
 	}
 
-	return s.submit(stat, "1|c", r)
+	return self.submit(stat, "1|c", r)
 }
 
 // Measure sends a duration to the provided stat (plus the prefix).
 // The rate value is optional, default is statsd.DefaultRate which is set as 1.0.
-func (s *Client) Measure(stat string, delta time.Duration, rate ...float32) error {
+func (s *RemoteClient) Measure(stat string, delta time.Duration, rate ...float32) error {
 	r := DefaultRate
 	if len(rate) > 0 {
 		r = rate[0]
@@ -130,14 +138,21 @@ func (s *Client) Measure(stat string, delta time.Duration, rate ...float32) erro
 
 // Gauges are arbitrary values that maintain their values' until set to
 // something else. Useful for logging queue sizes on set intervals.
-func (s *Client) Gauge(stat string, value interface{}) error {
+func (s *RemoteClient) Gauge(stat string, value interface{}) error {
 	dap := fmt.Sprintf("%v|g", value)
 	return s.submit(stat, dap, 1)
 }
 
+func (self *RemoteClient) Close() error {
+	self.buf.Flush()
+	self.buf = nil
+
+	return (*self.conn).Close()
+}
+
 // submit formats the statsd event data, handles sampling, and prepares it,
 // and sends it to the server.
-func (s *Client) submit(stat string, value string, rate float32) error {
+func (self *RemoteClient) submit(stat string, value string, rate float32) error {
 	if rate < 1 {
 		if rand.Float32() < rate {
 			value = fmt.Sprintf("%s|@%f", value, rate)
@@ -146,11 +161,11 @@ func (s *Client) submit(stat string, value string, rate float32) error {
 		}
 	}
 
-	if s.prefix != "" {
-		stat = s.prefix + "." + stat
+	if self.prefix != "" {
+		stat = self.prefix + "." + stat
 	}
 
-	_, err := s.send([]byte(stat + ":" + value))
+	_, err := self.send([]byte(stat + ":" + value))
 	if err != nil {
 		return err
 	}
@@ -159,27 +174,43 @@ func (s *Client) submit(stat string, value string, rate float32) error {
 }
 
 // sends the data to the server endpoint over the net.Conn
-func (s *Client) send(data []byte) (int, error) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+func (self *RemoteClient) send(data []byte) (int, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
 
-	if s.buf == nil {
-		return 0, ConnectionClosedErr
+	if self.buf == nil {
+		return 0, ErrConnectionClosed
 	}
 
-	n, err := s.buf.Write([]byte(data))
+	n, err := self.buf.Write([]byte(data))
 	if err != nil {
 		return 0, err
 	}
 
 	if n == 0 {
-		return n, ConnectionWriteErr
+		return n, ErrConnectionWrite
 	}
 
-	err = s.buf.Flush()
+	err = self.buf.Flush()
 	if err != nil {
 		return n, err
 	}
 
 	return n, nil
+}
+
+func (*NoopClient) Count(stat string, rate ...float32) error {
+	return nil
+}
+
+func (*NoopClient) Measure(stat string, delta time.Duration, rate ...float32) error {
+	return nil
+}
+
+func (*NoopClient) Gauge(stat string, value interface{}) error {
+	return nil
+}
+
+func (*NoopClient) Close() error {
+	return nil
 }

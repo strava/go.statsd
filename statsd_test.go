@@ -8,28 +8,46 @@ import (
 	"time"
 )
 
-func NewTestClient(prefix string) (*Client, *bytes.Buffer) {
+func NewTestClient(prefix string) (Stater, *bytes.Buffer) {
 	b := &bytes.Buffer{}
 	buf := bufio.NewReadWriter(bufio.NewReader(b), bufio.NewWriter(b))
-	c := &Client{buf: buf, prefix: prefix}
+	c := &RemoteClient{buf: buf, prefix: prefix}
 	return c, b
+}
+
+func TestNoopClient(t *testing.T) {
+	noop := &NoopClient{}
+
+	// should not panic
+	noop.Count("stat")
+	noop.Measure("stat", time.Second)
+	noop.Gauge("stat", 1)
+	noop.Close()
+}
+
+func TestDefaultClient(t *testing.T) {
+	// should default to NoopClient, should not panic
+	Count("stat")
+	Measure("stat", time.Second)
+	Gauge("stat", 1)
 }
 
 func TestNew(t *testing.T) {
 	// invalid address
-	c, err := New("0.0.0.0")
+	_, err := New("0.0.0.0")
 	if err == nil {
 		t.Error("invalid address, should have returned error")
 	}
 
 	// without prefix
-	c, err = New("0.0.0.0:1000")
+	c, err := New("0.0.0.0:1000")
+	client := c.(*RemoteClient)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	b := &bytes.Buffer{}
-	c.buf = bufio.NewReadWriter(bufio.NewReader(b), bufio.NewWriter(b))
+	client.buf = bufio.NewReadWriter(bufio.NewReader(b), bufio.NewWriter(b))
 
 	c.Count("test")
 	expected := "test:1|c"
@@ -39,14 +57,15 @@ func TestNew(t *testing.T) {
 
 	// with prefix
 	c2, err := New("0.0.0.0:1000", "prefix")
+	client2 := c2.(*RemoteClient)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	b.Reset()
-	c2.buf = c.buf
+	client2.buf = client.buf
 
-	c2.Count("test")
+	client2.Count("test")
 	expected = "prefix.test:1|c"
 	if b := b.String(); b != expected {
 		t.Fatalf("expected %s, got %s", expected, b)
@@ -62,7 +81,7 @@ func TestClose(t *testing.T) {
 	c.Close()
 
 	err = c.Count("test")
-	if err != ConnectionClosedErr {
+	if err != ErrConnectionClosed {
 		t.Error("closed connection, should have returned ConnectionClosedErr")
 	}
 

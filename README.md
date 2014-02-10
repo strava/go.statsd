@@ -37,6 +37,10 @@ throughout your application.
 	statsd.Count("event")
 	statsd.Timer("measurement", time.Millisecond)
 
+The default `statsd.DefaultClient` is a NoopClient that does nothing when called. Specifically, 
+it doesn't error since you don't have a connection to the server. 
+This allows for easy testing and local development.
+
 ### Counters
 
 	func Count(stat string, rate ...float32) error // uses the default client
