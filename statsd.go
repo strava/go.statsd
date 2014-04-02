@@ -88,27 +88,42 @@ func New(addr string, prefix ...string) (Stater, error) {
 // A rate value of 0.1 will only send one in every 10 calls to the
 // server. The statsd server will adjust its aggregation accordingly.
 func Count(stat string, rate ...float32) error {
-	if len(rate) > 0 {
-		return DefaultClient.Count(stat, rate[0])
+	client := DefaultClient
+	if client == nil {
+		client = &NoopClient{}
 	}
 
-	return DefaultClient.Count(stat)
+	if len(rate) > 0 {
+		return client.Count(stat, rate[0])
+	}
+
+	return client.Count(stat)
 }
 
 // Measure sends a duration to the provided stat (plus the prefix).
 // The rate value is optional, default is statsd.DefaultRate which is set as 1.0.
 func Measure(stat string, delta time.Duration, rate ...float32) error {
-	if len(rate) > 0 {
-		return DefaultClient.Measure(stat, delta, rate[0])
+	client := DefaultClient
+	if client == nil {
+		client = &NoopClient{}
 	}
 
-	return DefaultClient.Measure(stat, delta)
+	if len(rate) > 0 {
+		return client.Measure(stat, delta, rate[0])
+	}
+
+	return client.Measure(stat, delta)
 }
 
 // Gauges are arbitrary values that maintain their values' until set to
 // something else. Useful for logging queue sizes on set intervals.
 func Gauge(stat string, value interface{}) error {
-	return DefaultClient.Gauge(stat, value)
+	client := DefaultClient
+	if client == nil {
+		client = &NoopClient{}
+	}
+
+	return client.Gauge(stat, value)
 }
 
 // Count adds 1 to the provided stat. Rate is optional,

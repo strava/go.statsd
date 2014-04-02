@@ -112,6 +112,9 @@ func TestCount(t *testing.T) {
 	if b := buf.String(); b != expected {
 		t.Fatalf("expected %s, got %s", expected, b)
 	}
+
+	DefaultClient = nil
+	Count("count") // should not panic
 }
 
 func TestClientCount(t *testing.T) {
@@ -217,6 +220,9 @@ func TestMeasure(t *testing.T) {
 	if b := buf.String(); b != expected {
 		t.Fatalf("expected %s, got %s", expected, b)
 	}
+
+	DefaultClient = nil
+	Measure("measure", time.Second) // should not panic
 }
 
 func TestGauge(t *testing.T) {
@@ -232,6 +238,9 @@ func TestGauge(t *testing.T) {
 	if b := buf.String(); b != expected {
 		t.Fatalf("expected %s, got %s", expected, b)
 	}
+
+	DefaultClient = nil
+	Gauge("measure", 9.0) // should not panic
 }
 
 func TestClientGauge(t *testing.T) {
