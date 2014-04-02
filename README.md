@@ -28,7 +28,7 @@ your metrics.
 	client, err := statsd.New("statsd-server:8125", "gopher_service")
 
 Suggested usage is to set your client as the package's `statsd.DefaultClient`. 
-This allows the convenient usage of package's Count, Measure and Gauge functions
+This allows the convenient usage of the package's Count, Measure and Gauge functions
 throughout your application.
 
 	statsd.DefaultClient = client
