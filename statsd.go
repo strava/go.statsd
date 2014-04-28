@@ -20,7 +20,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-// This package implements a small client for StatsD, https://github.com/etsy/statsd
+// Package statsd implements a small client for StatsD, https://github.com/etsy/statsd
 // For detailed documentation and examples see README.md
 package statsd
 
@@ -34,14 +34,24 @@ import (
 	"time"
 )
 
+// DefaultClient is used by package functions statsd.Count, statsd.Measure, statsd.Gauge functions
 var DefaultClient Stater
+
+// DefaultRate is the rate used for Measure and Count calls if none is provided
 var DefaultRate float32 = 1.0
 
 var (
-	ErrConnectionClosed = errors.New("Connection Closed")
-	ErrConnectionWrite  = errors.New("Wrote no bytes")
+	// ErrConnectionClosed is triggered when trying to send on a closed connection.
+	// ie. you closed the Client and then tried to send again
+	ErrConnectionClosed = errors.New("connection closed")
+
+	// ErrConnectionWrite is returned if there was a problem sending the request.
+	ErrConnectionWrite = errors.New("wrote no bytes")
 )
 
+// Stater is the interface for posting to StatsD. It is implemented by
+// a NoopClient (used for testing and local environments) and the RemoteClient
+// which actually creates a connection to the server.
 type Stater interface {
 	Count(stat string, rate ...float32) error
 	Measure(stat string, delta time.Duration, rate ...float32) error
@@ -49,10 +59,11 @@ type Stater interface {
 	Close() error
 }
 
-// implements Stater
+// NoopClient implements Stater and is what's used before stats.DefaultClient
+// with a real RemoteClient
 type NoopClient struct{}
 
-// implements Stater
+// RemoteClient implements Stater
 type RemoteClient struct {
 	buf    *bufio.ReadWriter // need to read for tests
 	conn   *net.Conn
@@ -64,7 +75,7 @@ func init() {
 	DefaultClient = &NoopClient{}
 }
 
-// Creates a new UDP connection to the given server. The prefix
+// New opens a new UDP connection to the given server. The prefix
 // is optional and will be prepended to any stat using this client.
 func New(addr string, prefix ...string) (Stater, error) {
 	conn, err := net.Dial("udp", addr)
@@ -83,10 +94,7 @@ func New(addr string, prefix ...string) (Stater, error) {
 	return client, nil
 }
 
-// Count adds 1 to the provided stat. Rate is optional,
-// default is statsd.DefaultRate which is set as 1.0.
-// A rate value of 0.1 will only send one in every 10 calls to the
-// server. The statsd server will adjust its aggregation accordingly.
+// Count adds 1 to the provided stat using the statsd.DefaultClient.
 func Count(stat string, rate ...float32) error {
 	client := DefaultClient
 	if client == nil {
@@ -100,8 +108,7 @@ func Count(stat string, rate ...float32) error {
 	return client.Count(stat)
 }
 
-// Measure sends a duration to the provided stat (plus the prefix).
-// The rate value is optional, default is statsd.DefaultRate which is set as 1.0.
+// Measure reports a duration using the statsd.DefaultClient client.
 func Measure(stat string, delta time.Duration, rate ...float32) error {
 	client := DefaultClient
 	if client == nil {
@@ -115,8 +122,7 @@ func Measure(stat string, delta time.Duration, rate ...float32) error {
 	return client.Measure(stat, delta)
 }
 
-// Gauges are arbitrary values that maintain their values' until set to
-// something else. Useful for logging queue sizes on set intervals.
+// Gauge set a StatsD gauge value using the statsd.DefaultClient client.
 func Gauge(stat string, value interface{}) error {
 	client := DefaultClient
 	if client == nil {
@@ -130,44 +136,46 @@ func Gauge(stat string, value interface{}) error {
 // default is statsd.DefaultRate which is set as 1.0.
 // A rate value of 0.1 will only send one in every 10 calls to the
 // server. The statsd server will adjust its aggregation accordingly.
-func (self *RemoteClient) Count(stat string, rate ...float32) error {
+func (client *RemoteClient) Count(stat string, rate ...float32) error {
 	r := DefaultRate
 	if len(rate) > 0 {
 		r = rate[0]
 	}
 
-	return self.submit(stat, "1|c", r)
+	return client.submit(stat, "1|c", r)
 }
 
-// Measure sends a duration to the provided stat (plus the prefix).
+// Measure reports a duration to the provided stat (plus the prefix).
 // The rate value is optional, default is statsd.DefaultRate which is set as 1.0.
-func (s *RemoteClient) Measure(stat string, delta time.Duration, rate ...float32) error {
+func (client *RemoteClient) Measure(stat string, delta time.Duration, rate ...float32) error {
 	r := DefaultRate
 	if len(rate) > 0 {
 		r = rate[0]
 	}
 
 	dap := fmt.Sprintf("%d|ms", int64(delta/time.Millisecond))
-	return s.submit(stat, dap, r)
+	return client.submit(stat, dap, r)
 }
 
-// Gauges are arbitrary values that maintain their values' until set to
-// something else. Useful for logging queue sizes on set intervals.
-func (s *RemoteClient) Gauge(stat string, value interface{}) error {
+// Gauge set a StatsD gauge value which is an arbitrary value that maintain
+// its value until set to something else.
+// Useful for logging queue sizes on set intervals.
+func (client *RemoteClient) Gauge(stat string, value interface{}) error {
 	dap := fmt.Sprintf("%v|g", value)
-	return s.submit(stat, dap, 1)
+	return client.submit(stat, dap, 1)
 }
 
-func (self *RemoteClient) Close() error {
-	self.buf.Flush()
-	self.buf = nil
+// Close flushes the buffer and closes the connection.
+func (client *RemoteClient) Close() error {
+	client.buf.Flush()
+	client.buf = nil
 
-	return (*self.conn).Close()
+	return (*client.conn).Close()
 }
 
 // submit formats the statsd event data, handles sampling, and prepares it,
 // and sends it to the server.
-func (self *RemoteClient) submit(stat string, value string, rate float32) error {
+func (client *RemoteClient) submit(stat string, value string, rate float32) error {
 	if rate < 1 {
 		if rand.Float32() < rate {
 			value = fmt.Sprintf("%s|@%f", value, rate)
@@ -176,11 +184,11 @@ func (self *RemoteClient) submit(stat string, value string, rate float32) error 
 		}
 	}
 
-	if self.prefix != "" {
-		stat = self.prefix + "." + stat
+	if client.prefix != "" {
+		stat = client.prefix + "." + stat
 	}
 
-	_, err := self.send([]byte(stat + ":" + value))
+	_, err := client.send([]byte(stat + ":" + value))
 	if err != nil {
 		return err
 	}
@@ -189,15 +197,15 @@ func (self *RemoteClient) submit(stat string, value string, rate float32) error 
 }
 
 // sends the data to the server endpoint over the net.Conn
-func (self *RemoteClient) send(data []byte) (int, error) {
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
+func (client *RemoteClient) send(data []byte) (int, error) {
+	client.mutex.Lock()
+	defer client.mutex.Unlock()
 
-	if self.buf == nil {
+	if client.buf == nil {
 		return 0, ErrConnectionClosed
 	}
 
-	n, err := self.buf.Write([]byte(data))
+	n, err := client.buf.Write([]byte(data))
 	if err != nil {
 		return 0, err
 	}
@@ -206,7 +214,7 @@ func (self *RemoteClient) send(data []byte) (int, error) {
 		return n, ErrConnectionWrite
 	}
 
-	err = self.buf.Flush()
+	err = client.buf.Flush()
 	if err != nil {
 		return n, err
 	}
@@ -214,18 +222,22 @@ func (self *RemoteClient) send(data []byte) (int, error) {
 	return n, nil
 }
 
+// Count on NoopClient is a noop and does not require and internet connection.
 func (*NoopClient) Count(stat string, rate ...float32) error {
 	return nil
 }
 
+// Measure on NoopClient is a noop and does not require and internet connection.
 func (*NoopClient) Measure(stat string, delta time.Duration, rate ...float32) error {
 	return nil
 }
 
+// Gauge on NoopClient is a noop and does not require and internet connection.
 func (*NoopClient) Gauge(stat string, value interface{}) error {
 	return nil
 }
 
+// Close on NoopClient is a noop and does not require and internet connection.
 func (*NoopClient) Close() error {
 	return nil
 }
