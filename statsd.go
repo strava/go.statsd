@@ -40,6 +40,9 @@ var DefaultClient Stater
 // DefaultRate is the rate used for Measure and Count calls if none is provided
 var DefaultRate float32 = 1.0
 
+// DefaultReconnectDelay is the time before trying, yet again, to reconnect after a network error.
+var DefaultReconnectDelay = time.Second
+
 var (
 	// ErrConnectionClosed is triggered when trying to send on a closed connection.
 	// ie. you closed the Client and then tried to send again
@@ -65,10 +68,13 @@ type NoopClient struct{}
 
 // RemoteClient implements Stater
 type RemoteClient struct {
-	buf    *bufio.ReadWriter // need to read for tests
-	conn   *net.Conn
-	prefix string
-	mutex  sync.Mutex
+	ReconnectDelay time.Duration
+	address        string
+	buf            *bufio.ReadWriter // need to read for tests
+	conn           net.Conn
+	prefix         string
+	reconnectChan  chan struct{}
+	writeMutex     sync.Mutex
 }
 
 func init() {
@@ -77,21 +83,57 @@ func init() {
 
 // New opens a new UDP connection to the given server. The prefix
 // is optional and will be prepended to any stat using this client.
-func New(addr string, prefix ...string) (Stater, error) {
-	conn, err := net.Dial("udp", addr)
-	if err != nil {
-		return nil, err
-	}
-
+func New(address string, prefix ...string) (Stater, error) {
 	p := ""
 	if len(prefix) > 0 {
 		p = prefix[0]
 	}
 
-	buf := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
-	client := &RemoteClient{buf: buf, conn: &conn, prefix: p}
+	client := &RemoteClient{
+		ReconnectDelay: DefaultReconnectDelay,
+		address:        address,
+		prefix:         p,
+		reconnectChan:  make(chan struct{}, 1),
+	}
+	client.reconnectChan <- struct{}{}
+
+	err := client.connect()
+	if err != nil {
+		return nil, err
+	}
 
 	return client, nil
+}
+
+func (client *RemoteClient) connect() error {
+	// here we use client.reconnectChan as a nonblocking mutex.
+	select {
+	case <-client.reconnectChan:
+	default:
+		return fmt.Errorf("reconnect delay in progress")
+	}
+
+	// release the reconnect lock after the delay
+	go func() {
+		time.Sleep(client.ReconnectDelay)
+		select {
+		case client.reconnectChan <- struct{}{}:
+		default:
+		}
+	}()
+
+	client.writeMutex.Lock()
+	defer client.writeMutex.Unlock()
+
+	conn, err := net.Dial("udp", client.address)
+	if err != nil {
+		return err
+	}
+
+	client.conn = conn
+	client.buf = bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+
+	return nil
 }
 
 // Count adds 1 to the provided stat using the statsd.DefaultClient.
@@ -170,7 +212,7 @@ func (client *RemoteClient) Close() error {
 	client.buf.Flush()
 	client.buf = nil
 
-	return (*client.conn).Close()
+	return client.conn.Close()
 }
 
 // submit formats the statsd event data, handles sampling, and prepares it,
@@ -188,8 +230,19 @@ func (client *RemoteClient) submit(stat string, value string, rate float32) erro
 		stat = client.prefix + "." + stat
 	}
 
-	_, err := client.send([]byte(stat + ":" + value))
+	message := []byte(stat + ":" + value)
+
+	_, err := client.send(message)
 	if err != nil {
+		connectError := client.connect()
+
+		// reconnect successed so try again with this on.
+		if connectError == nil {
+			_, err := client.send(message)
+			return err
+		}
+
+		// reconnect delay in progress so send the original error.
 		return err
 	}
 
@@ -198,8 +251,8 @@ func (client *RemoteClient) submit(stat string, value string, rate float32) erro
 
 // sends the data to the server endpoint over the net.Conn
 func (client *RemoteClient) send(data []byte) (int, error) {
-	client.mutex.Lock()
-	defer client.mutex.Unlock()
+	client.writeMutex.Lock()
+	defer client.writeMutex.Unlock()
 
 	if client.buf == nil {
 		return 0, ErrConnectionClosed
@@ -214,6 +267,7 @@ func (client *RemoteClient) send(data []byte) (int, error) {
 		return n, ErrConnectionWrite
 	}
 
+	// TOOD: figure out if we really need to do a buffer flush after every metric.
 	err = client.buf.Flush()
 	if err != nil {
 		return n, err
