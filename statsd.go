@@ -34,10 +34,10 @@ import (
 	"time"
 )
 
-// DefaultClient is used by package functions statsd.Count, statsd.Measure, statsd.Gauge functions
+// DefaultClient is used by package functions statsd.Count, statsd.Measure, statsd.Gauge functions.
 var DefaultClient Stater
 
-// DefaultRate is the rate used for Measure and Count calls if none is provided
+// DefaultRate is the rate used for Measure and Count calls if none is provided.
 var DefaultRate float32 = 1.0
 
 // DefaultReconnectDelay is the time before trying, yet again, to reconnect after a network error.
@@ -57,6 +57,7 @@ var (
 // which actually creates a connection to the server.
 type Stater interface {
 	Count(stat string, rate ...float32) error
+	CountMultiple(stat string, count int, rate ...float32) error
 	Measure(stat string, delta time.Duration, rate ...float32) error
 	Gauge(stat string, value interface{}) error
 	Close() error
@@ -138,16 +139,18 @@ func (client *RemoteClient) connect() error {
 
 // Count adds 1 to the provided stat using the statsd.DefaultClient.
 func Count(stat string, rate ...float32) error {
+	return CountMultiple(stat, 1, rate...)
+}
+
+// CountMultiple adds `count` to the provided stat using the statsd.DefaultClient.
+func CountMultiple(stat string, count int, rate ...float32) error {
 	client := DefaultClient
 	if client == nil {
 		client = NoopClient{}
 	}
 
-	if len(rate) > 0 {
-		return client.Count(stat, rate[0])
-	}
+	return client.CountMultiple(stat, count, rate...)
 
-	return client.Count(stat)
 }
 
 // Measure reports a duration using the statsd.DefaultClient client.
@@ -157,11 +160,7 @@ func Measure(stat string, delta time.Duration, rate ...float32) error {
 		client = NoopClient{}
 	}
 
-	if len(rate) > 0 {
-		return client.Measure(stat, delta, rate[0])
-	}
-
-	return client.Measure(stat, delta)
+	return client.Measure(stat, delta, rate...)
 }
 
 // Gauge set a StatsD gauge value using the statsd.DefaultClient client.
@@ -179,12 +178,20 @@ func Gauge(stat string, value interface{}) error {
 // A rate value of 0.1 will only send one in every 10 calls to the
 // server. The statsd server will adjust its aggregation accordingly.
 func (client *RemoteClient) Count(stat string, rate ...float32) error {
+	return client.CountMultiple(stat, 1, rate...)
+}
+
+// Count adds `count` to the provided stat. Rate is optional,
+// default is statsd.DefaultRate which is set as 1.0.
+// A rate value of 0.1 will only send one in every 10 calls to the
+// server. The statsd server will adjust its aggregation accordingly.
+func (client *RemoteClient) CountMultiple(stat string, count int, rate ...float32) error {
 	r := DefaultRate
 	if len(rate) > 0 {
 		r = rate[0]
 	}
 
-	return client.submit(stat, "1|c", r)
+	return client.submit(stat, fmt.Sprintf("%d|c", count), r)
 }
 
 // Measure reports a duration to the provided stat (plus the prefix).
@@ -278,6 +285,11 @@ func (client *RemoteClient) send(data []byte) (int, error) {
 
 // Count on NoopClient is a noop and does not require and internet connection.
 func (NoopClient) Count(stat string, rate ...float32) error {
+	return nil
+}
+
+// CountMultiple on NoopClient is a noop and does not require and internet connection.
+func (NoopClient) CountMultiple(stat string, count int, rate ...float32) error {
 	return nil
 }
 

@@ -28,17 +28,18 @@ your metrics.
 	client, err := statsd.New("statsd-server:8125", "gopher_service")
 
 Suggested usage is to set your client as the package's `statsd.DefaultClient`. 
-This allows the convenient usage of the package's Count, Measure and Gauge functions
-throughout your application.
+This allows the convenient usage of the package's Count, CountMultiple, Measure and Gauge functions throughout your application.
 
 	statsd.DefaultClient = client
 
 	// usage
 	statsd.Count("event")
+	statsd.CountMultiple("event", 5)
 	statsd.Timer("measurement", time.Millisecond)
+	statsd.Gauge("queue_size", size)
 
-The default `statsd.DefaultClient` is a NoopClient that does nothing when called. Specifically, 
-it doesn't error since you don't have a connection to the server. 
+The default `statsd.DefaultClient` is a NoopClient that does nothing when called. 
+Specifically, it doesn't error since you don't have a connection to the server. 
 This allows for easy testing and local development.
 
 ### Counters
@@ -46,8 +47,13 @@ This allows for easy testing and local development.
 	func Count(stat string, rate ...float32) error // uses the default client
 	func (s *Client) Count(stat string, rate ...float32) error
 
-Count adds 1 to the provided stat (plus the prefix). Rate is optional, a value of 0.1 will send one in
-every 10 calls to the server. The statsd server will adjust its counts accordingly.
+	func CountMultiple(stat string, count int, rate ...float32) error // uses the default client
+	func (s *Client) CountMultiple(stat string, count int, rate ...float32) error
+
+Count adds 1 to the provided stat (plus the prefix). 
+CountMultiple added to provided `count` to the stat.
+Rate is optional, a value of 0.1 will send one in every 10 calls to the server. 
+The statsd server will adjust its counts accordingly.
 The default rate is 1.0 and is defined as the package variable `stats.DefaultRate`.
 
 ### Timers / Measure
@@ -55,7 +61,9 @@ The default rate is 1.0 and is defined as the package variable `stats.DefaultRat
 	func Measure(stat string, delta time.Duration, rate ...float32) error
 	func (s *Client) Measure(stat string, delta time.Duration, rate ...float32) error
 
-Measure sends a delta time to the provided stat (plus the prefix). The rate value is optional.
+Measure sends a delta time to the provided stat (plus the prefix). 
+The rate value is optional.
+
 Example usage:
 
 	func FunctionToMeasure() {

@@ -20,6 +20,7 @@ func TestNoopClient(t *testing.T) {
 
 	// should not panic
 	noop.Count("stat")
+	noop.CountMultiple("stat", 3)
 	noop.Measure("stat", time.Second)
 	noop.Gauge("stat", 1)
 	noop.Close()
@@ -28,6 +29,7 @@ func TestNoopClient(t *testing.T) {
 
 	// should not panic
 	noopPointer.Count("stat")
+	noopPointer.CountMultiple("stat", 4)
 	noopPointer.Measure("stat", time.Second)
 	noopPointer.Gauge("stat", 1)
 	noopPointer.Close()
@@ -36,6 +38,7 @@ func TestNoopClient(t *testing.T) {
 func TestDefaultClient(t *testing.T) {
 	// should default to NoopClient, should not panic
 	Count("stat")
+	CountMultiple("stat", 4)
 	Measure("stat", time.Second)
 	Gauge("stat", 1)
 }
@@ -57,7 +60,7 @@ func TestNew(t *testing.T) {
 	b := &bytes.Buffer{}
 	client.buf = bufio.NewReadWriter(bufio.NewReader(b), bufio.NewWriter(b))
 
-	c.Count("test")
+	c.Count("test", 1)
 	expected := "test:1|c"
 	if b := b.String(); b != expected {
 		t.Fatalf("expected %s, got %s", expected, b)
@@ -88,7 +91,7 @@ func TestClose(t *testing.T) {
 
 	c.Close()
 
-	err = c.Count("test")
+	err = c.Count("test", 1)
 	if err != ErrConnectionClosed {
 		t.Error("closed connection, should have returned ConnectionClosedErr")
 	}
@@ -123,6 +126,36 @@ func TestCount(t *testing.T) {
 
 	DefaultClient = nil
 	Count("count") // should not panic
+}
+
+func TestCountMultiple(t *testing.T) {
+	c, buf := NewTestClient("default")
+	DefaultClient = c
+
+	err := CountMultiple("count", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := "default.count:5|c"
+	if b := buf.String(); b != expected {
+		t.Fatalf("expected %s, got %s", expected, b)
+	}
+
+	// with rate
+	buf.Reset()
+	err = CountMultiple("count", 4, 0.999999)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected = "default.count:4|c|@0.999999"
+	if b := buf.String(); b != expected {
+		t.Fatalf("expected %s, got %s", expected, b)
+	}
+
+	DefaultClient = nil
+	CountMultiple("count", 5) // should not panic
 }
 
 func TestClientCount(t *testing.T) {
@@ -163,6 +196,43 @@ func TestClientCount(t *testing.T) {
 	}
 }
 
+func TestClientCountMultiple(t *testing.T) {
+	c, buf := NewTestClient("test")
+
+	err := c.CountMultiple("count", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := "test.count:5|c"
+	if b := buf.String(); b != expected {
+		t.Fatalf("expected %s, got %s", expected, b)
+	}
+
+	// with rate
+	buf.Reset()
+	err = c.CountMultiple("count", 6, 0.999999)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected = "test.count:6|c|@0.999999"
+	if b := buf.String(); b != expected {
+		t.Fatalf("expected %s, got %s", expected, b)
+	}
+
+	// below rate, should not fill buffer
+	buf.Reset()
+	err = c.CountMultiple("count", 7, 0.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected = ""
+	if b := buf.String(); b != expected {
+		t.Fatalf("expected %s, got %s", expected, b)
+	}
+}
 func TestClientMeasure(t *testing.T) {
 	c, buf := NewTestClient("test")
 
