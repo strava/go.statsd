@@ -181,7 +181,7 @@ func (client *RemoteClient) Count(stat string, rate ...float32) error {
 	return client.CountMultiple(stat, 1, rate...)
 }
 
-// Count adds `count` to the provided stat. Rate is optional,
+// CountMultiple adds `count` to the provided stat. Rate is optional,
 // default is statsd.DefaultRate which is set as 1.0.
 // A rate value of 0.1 will only send one in every 10 calls to the
 // server. The statsd server will adjust its aggregation accordingly.
