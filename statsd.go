@@ -78,7 +78,7 @@ type RemoteClient struct {
 }
 
 func init() {
-	DefaultClient = &NoopClient{}
+	DefaultClient = NoopClient{}
 }
 
 // New opens a new UDP connection to the given server. The prefix
@@ -140,7 +140,7 @@ func (client *RemoteClient) connect() error {
 func Count(stat string, rate ...float32) error {
 	client := DefaultClient
 	if client == nil {
-		client = &NoopClient{}
+		client = NoopClient{}
 	}
 
 	if len(rate) > 0 {
@@ -154,7 +154,7 @@ func Count(stat string, rate ...float32) error {
 func Measure(stat string, delta time.Duration, rate ...float32) error {
 	client := DefaultClient
 	if client == nil {
-		client = &NoopClient{}
+		client = NoopClient{}
 	}
 
 	if len(rate) > 0 {
@@ -168,7 +168,7 @@ func Measure(stat string, delta time.Duration, rate ...float32) error {
 func Gauge(stat string, value interface{}) error {
 	client := DefaultClient
 	if client == nil {
-		client = &NoopClient{}
+		client = NoopClient{}
 	}
 
 	return client.Gauge(stat, value)
@@ -277,21 +277,21 @@ func (client *RemoteClient) send(data []byte) (int, error) {
 }
 
 // Count on NoopClient is a noop and does not require and internet connection.
-func (*NoopClient) Count(stat string, rate ...float32) error {
+func (NoopClient) Count(stat string, rate ...float32) error {
 	return nil
 }
 
 // Measure on NoopClient is a noop and does not require and internet connection.
-func (*NoopClient) Measure(stat string, delta time.Duration, rate ...float32) error {
+func (NoopClient) Measure(stat string, delta time.Duration, rate ...float32) error {
 	return nil
 }
 
 // Gauge on NoopClient is a noop and does not require and internet connection.
-func (*NoopClient) Gauge(stat string, value interface{}) error {
+func (NoopClient) Gauge(stat string, value interface{}) error {
 	return nil
 }
 
 // Close on NoopClient is a noop and does not require and internet connection.
-func (*NoopClient) Close() error {
+func (NoopClient) Close() error {
 	return nil
 }

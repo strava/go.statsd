@@ -16,13 +16,21 @@ func NewTestClient(prefix string) (Stater, *bytes.Buffer) {
 }
 
 func TestNoopClient(t *testing.T) {
-	noop := &NoopClient{}
+	noop := NoopClient{}
 
 	// should not panic
 	noop.Count("stat")
 	noop.Measure("stat", time.Second)
 	noop.Gauge("stat", 1)
 	noop.Close()
+
+	noopPointer := &NoopClient{}
+
+	// should not panic
+	noopPointer.Count("stat")
+	noopPointer.Measure("stat", time.Second)
+	noopPointer.Gauge("stat", 1)
+	noopPointer.Close()
 }
 
 func TestDefaultClient(t *testing.T) {
