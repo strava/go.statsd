@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -73,7 +74,7 @@ type RemoteClient struct {
 	address        string
 	buf            *bufio.ReadWriter // need to read for tests
 	conn           net.Conn
-	prefix         string
+	prefix         []byte
 	reconnectChan  chan struct{}
 	writeMutex     sync.Mutex
 }
@@ -93,7 +94,7 @@ func New(address string, prefix ...string) (Stater, error) {
 	client := &RemoteClient{
 		ReconnectDelay: DefaultReconnectDelay,
 		address:        address,
-		prefix:         p,
+		prefix:         []byte(p),
 		reconnectChan:  make(chan struct{}, 1),
 	}
 	client.reconnectChan <- struct{}{}
@@ -191,7 +192,12 @@ func (client *RemoteClient) CountMultiple(stat string, count int, rate ...float3
 		r = rate[0]
 	}
 
-	return client.submit(stat, fmt.Sprintf("%d|c", count), r)
+	// fmt.Sprintf("%d|c", count)
+	data := make([]byte, 0, 20)
+	data = strconv.AppendInt(data, int64(count), 10)
+	data = append(data, '|', 'c')
+
+	return client.submit(stat, data, r)
 }
 
 // Measure reports a duration to the provided stat (plus the prefix).
@@ -202,8 +208,12 @@ func (client *RemoteClient) Measure(stat string, delta time.Duration, rate ...fl
 		r = rate[0]
 	}
 
-	dap := fmt.Sprintf("%d|ms", int64(delta/time.Millisecond))
-	return client.submit(stat, dap, r)
+	// data := fmt.Sprintf("%d|ms", int64(delta/time.Millisecond))
+	data := make([]byte, 0, 20)
+	data = strconv.AppendInt(data, int64(delta/time.Millisecond), 10)
+	data = append(data, '|', 'm', 's')
+
+	return client.submit(stat, data, r)
 }
 
 // Gauge set a StatsD gauge value which is an arbitrary value that maintain
@@ -211,7 +221,7 @@ func (client *RemoteClient) Measure(stat string, delta time.Duration, rate ...fl
 // Useful for logging queue sizes on set intervals.
 func (client *RemoteClient) Gauge(stat string, value interface{}) error {
 	dap := fmt.Sprintf("%v|g", value)
-	return client.submit(stat, dap, 1)
+	return client.submit(stat, []byte(dap), 1)
 }
 
 // Close flushes the buffer and closes the connection.
@@ -224,26 +234,38 @@ func (client *RemoteClient) Close() error {
 
 // submit formats the statsd event data, handles sampling, and prepares it,
 // and sends it to the server.
-func (client *RemoteClient) submit(stat string, value string, rate float32) error {
+func (client *RemoteClient) submit(stat string, value []byte, rate float32) error {
 	if rate < 1 {
 		if rand.Float32() < rate {
-			value = fmt.Sprintf("%s|@%f", value, rate)
+			// value = fmt.Sprintf("%s|@%f", value, rate)
+			value = append(value, '|', '@')
+			value = strconv.AppendFloat(value, float64(rate), 'f', -1, 32)
 		} else {
 			return nil
 		}
 	}
 
-	if client.prefix != "" {
-		stat = client.prefix + "." + stat
+	message := make([]byte, 0, len(client.prefix)+len(stat)+len(value)+3)
+
+	if len(client.prefix) != 0 {
+		message = append(message, client.prefix...)
+		message = append(message, '.')
 	}
 
-	message := []byte(stat + ":" + value)
+	// This loop removes the need for the intermediate string -> []byte convertion into append
+	// message = append(message, []byte(stat)...)
+	for i := 0; i < len(stat); i++ {
+		message = append(message, stat[i])
+	}
+
+	message = append(message, ':')
+	message = append(message, value...)
 
 	_, err := client.send(message)
 	if err != nil {
 		connectError := client.connect()
 
-		// reconnect successed so try again with this on.
+		// reconnect successed so try again with this one.
 		if connectError == nil {
 			_, err := client.send(message)
 			return err
@@ -265,7 +287,7 @@ func (client *RemoteClient) send(data []byte) (int, error) {
 		return 0, ErrConnectionClosed
 	}
 
-	n, err := client.buf.Write([]byte(data))
+	n, err := client.buf.Write(data)
 	if err != nil {
 		return 0, err
 	}

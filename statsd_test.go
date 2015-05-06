@@ -11,7 +11,7 @@ import (
 func NewTestClient(prefix string) (Stater, *bytes.Buffer) {
 	b := &bytes.Buffer{}
 	buf := bufio.NewReadWriter(bufio.NewReader(b), bufio.NewWriter(b))
-	c := &RemoteClient{buf: buf, prefix: prefix}
+	c := &RemoteClient{buf: buf, prefix: []byte(prefix)}
 	return c, b
 }
 
