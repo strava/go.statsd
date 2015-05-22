@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func NewTestClient(prefix string) (Stater, *bytes.Buffer) {
+func NewTestClient(prefix string) (*RemoteClient, *bytes.Buffer) {
 	b := &bytes.Buffer{}
 	buf := bufio.NewReadWriter(bufio.NewReader(b), bufio.NewWriter(b))
 	c := &RemoteClient{buf: buf, prefix: []byte(prefix)}
@@ -124,6 +124,19 @@ func TestCount(t *testing.T) {
 		t.Fatalf("expected %s, got %s", expected, b)
 	}
 
+	// with client rate
+	buf.Reset()
+	DefaultClient.(*RemoteClient).DefaultRate = 0.999999
+	err = Count("count")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected = "default.count:1|c|@0.999999"
+	if b := buf.String(); b != expected {
+		t.Fatalf("expected %s, got %s", expected, b)
+	}
+
 	DefaultClient = nil
 	Count("count") // should not panic
 }
@@ -150,6 +163,19 @@ func TestCountMultiple(t *testing.T) {
 	}
 
 	expected = "default.count:4|c|@0.999999"
+	if b := buf.String(); b != expected {
+		t.Fatalf("expected %s, got %s", expected, b)
+	}
+
+	// with client rate
+	buf.Reset()
+	DefaultClient.(*RemoteClient).DefaultRate = 0.999999
+	err = CountMultiple("count", 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected = "default.count:6|c|@0.999999"
 	if b := buf.String(); b != expected {
 		t.Fatalf("expected %s, got %s", expected, b)
 	}
@@ -194,6 +220,19 @@ func TestClientCount(t *testing.T) {
 	if b := buf.String(); b != expected {
 		t.Fatalf("expected %s, got %s", expected, b)
 	}
+
+	// with client rate
+	buf.Reset()
+	c.DefaultRate = 0.999999
+	err = c.Count("count")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected = "test.count:1|c|@0.999999"
+	if b := buf.String(); b != expected {
+		t.Fatalf("expected %s, got %s", expected, b)
+	}
 }
 
 func TestClientCountMultiple(t *testing.T) {
@@ -232,7 +271,21 @@ func TestClientCountMultiple(t *testing.T) {
 	if b := buf.String(); b != expected {
 		t.Fatalf("expected %s, got %s", expected, b)
 	}
+
+	// with client rate
+	buf.Reset()
+	c.DefaultRate = 0.999999
+	err = c.CountMultiple("count", 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected = "test.count:6|c|@0.999999"
+	if b := buf.String(); b != expected {
+		t.Fatalf("expected %s, got %s", expected, b)
+	}
 }
+
 func TestClientMeasure(t *testing.T) {
 	c, buf := NewTestClient("test")
 
@@ -270,6 +323,19 @@ func TestClientMeasure(t *testing.T) {
 	if b := buf.String(); b != expected {
 		t.Fatalf("expected %s, got %s", expected, b)
 	}
+
+	// with client rate
+	buf.Reset()
+	c.DefaultRate = 0.999999
+	err = c.Measure("measure", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected = "test.measure:1000|ms|@0.999999"
+	if b := buf.String(); b != expected {
+		t.Fatalf("expected %s, got %s", expected, b)
+	}
 }
 
 func TestMeasure(t *testing.T) {
@@ -290,6 +356,19 @@ func TestMeasure(t *testing.T) {
 	// with rate
 	buf.Reset()
 	err = Measure("measure", time.Second, 0.999999)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected = "default.measure:1000|ms|@0.999999"
+	if b := buf.String(); b != expected {
+		t.Fatalf("expected %s, got %s", expected, b)
+	}
+
+	// with client rate
+	buf.Reset()
+	DefaultClient.(*RemoteClient).DefaultRate = 0.999999
+	err = Measure("measure", time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

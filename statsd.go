@@ -71,6 +71,7 @@ type NoopClient struct{}
 // RemoteClient implements Stater
 type RemoteClient struct {
 	ReconnectDelay time.Duration
+	DefaultRate    float32
 	address        string
 	buf            *bufio.ReadWriter // need to read for tests
 	conn           net.Conn
@@ -174,20 +175,28 @@ func Gauge(stat string, value interface{}) error {
 	return client.Gauge(stat, value)
 }
 
-// Count adds 1 to the provided stat. Rate is optional,
-// default is statsd.DefaultRate which is set as 1.0.
+// Count adds 1 to the provided stat. Rate is optional and
+// uses the client's DefaultRate if not provided, but if that's zero,
+// uses the global statsd.DefaultRate which is initially set as 1.0.
+// So, if you don't make any changes and the rate is not provided, 1.0 will be used.
 // A rate value of 0.1 will only send one in every 10 calls to the
 // server. The statsd server will adjust its aggregation accordingly.
 func (client *RemoteClient) Count(stat string, rate ...float32) error {
 	return client.CountMultiple(stat, 1, rate...)
 }
 
-// CountMultiple adds `count` to the provided stat. Rate is optional,
-// default is statsd.DefaultRate which is set as 1.0.
+// CountMultiple adds `count` to the provided stat. Rate is optional and
+// uses the client's DefaultRate if not provided, but if that's zero,
+// uses the global statsd.DefaultRate which is initially set as 1.0.
+// So, if you don't make any changes and the rate is not provided, 1.0 will be used.
 // A rate value of 0.1 will only send one in every 10 calls to the
 // server. The statsd server will adjust its aggregation accordingly.
 func (client *RemoteClient) CountMultiple(stat string, count int, rate ...float32) error {
-	r := DefaultRate
+	r := client.DefaultRate
+	if r == 0 {
+		r = DefaultRate
+	}
+
 	if len(rate) > 0 {
 		r = rate[0]
 	}
@@ -201,9 +210,15 @@ func (client *RemoteClient) CountMultiple(stat string, count int, rate ...float3
 }
 
 // Measure reports a duration to the provided stat (plus the prefix).
-// The rate value is optional, default is statsd.DefaultRate which is set as 1.0.
+// Rate is optional and uses the client's DefaultRate if not provided, but if that's zero,
+// uses the global statsd.DefaultRate which is initially set as 1.0.
+// So, if you don't make any changes and the rate is not provided, 1.0 will be used.
 func (client *RemoteClient) Measure(stat string, delta time.Duration, rate ...float32) error {
-	r := DefaultRate
+	r := client.DefaultRate
+	if r == 0 {
+		r = DefaultRate
+	}
+
 	if len(rate) > 0 {
 		r = rate[0]
 	}
