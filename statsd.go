@@ -36,7 +36,7 @@ import (
 )
 
 // DefaultClient is used by package functions statsd.Count, statsd.Measure, statsd.Gauge functions.
-var DefaultClient Stater
+var DefaultClient Stater = NoopClient{}
 
 // DefaultRate is the rate used for Measure and Count calls if none is provided.
 var DefaultRate float32 = 1.0
@@ -72,21 +72,21 @@ type NoopClient struct{}
 type RemoteClient struct {
 	ReconnectDelay time.Duration
 	DefaultRate    float32
-	address        string
-	buf            *bufio.ReadWriter // need to read for tests
-	conn           net.Conn
 	prefix         []byte
-	reconnectChan  chan struct{}
-	writeMutex     sync.Mutex
+	*connection
 }
 
-func init() {
-	DefaultClient = NoopClient{}
+type connection struct {
+	address       string
+	buf           *bufio.ReadWriter // need to read for tests
+	conn          net.Conn
+	reconnectChan chan struct{}
+	writeMutex    sync.Mutex
 }
 
 // New opens a new UDP connection to the given server. The prefix
 // is optional and will be prepended to any stat using this client.
-func New(address string, prefix ...string) (Stater, error) {
+func New(address string, prefix ...string) (*RemoteClient, error) {
 	p := ""
 	if len(prefix) > 0 {
 		p = prefix[0]
@@ -94,9 +94,11 @@ func New(address string, prefix ...string) (Stater, error) {
 
 	client := &RemoteClient{
 		ReconnectDelay: DefaultReconnectDelay,
-		address:        address,
 		prefix:         []byte(p),
-		reconnectChan:  make(chan struct{}, 1),
+		connection: &connection{
+			address:       address,
+			reconnectChan: make(chan struct{}, 1),
+		},
 	}
 	client.reconnectChan <- struct{}{}
 
@@ -106,6 +108,26 @@ func New(address string, prefix ...string) (Stater, error) {
 	}
 
 	return client, nil
+}
+
+// Substater returns another RemoteClient using the same connection but appending
+// to the stats prefix. A dot (.) will be added between the current prefix and extraPrefix
+// if there isn't one there already.
+func (client *RemoteClient) Substater(extraPrefix string) *RemoteClient {
+	newClient := &RemoteClient{
+		ReconnectDelay: client.ReconnectDelay,
+		DefaultRate:    client.DefaultRate,
+		connection:     client.connection,
+	}
+
+	if extraPrefix[0] == '.' {
+		newClient.prefix = append(client.prefix, []byte(extraPrefix)...)
+	} else {
+		newClient.prefix = append(client.prefix, '.')
+		newClient.prefix = append(newClient.prefix, []byte(extraPrefix)...)
+	}
+
+	return newClient
 }
 
 func (client *RemoteClient) connect() error {
@@ -241,8 +263,13 @@ func (client *RemoteClient) Gauge(stat string, value interface{}) error {
 
 // Close flushes the buffer and closes the connection.
 func (client *RemoteClient) Close() error {
-	client.buf.Flush()
-	client.buf = nil
+	client.writeMutex.Lock()
+	defer client.writeMutex.Unlock()
+
+	if client.buf != nil {
+		client.buf.Flush()
+		client.buf = nil
+	}
 
 	return client.conn.Close()
 }

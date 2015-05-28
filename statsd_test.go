@@ -11,7 +11,12 @@ import (
 func NewTestClient(prefix string) (*RemoteClient, *bytes.Buffer) {
 	b := &bytes.Buffer{}
 	buf := bufio.NewReadWriter(bufio.NewReader(b), bufio.NewWriter(b))
-	c := &RemoteClient{buf: buf, prefix: []byte(prefix)}
+	c := &RemoteClient{
+		prefix: []byte(prefix),
+		connection: &connection{
+			buf: buf,
+		},
+	}
 	return c, b
 }
 
@@ -44,6 +49,9 @@ func TestDefaultClient(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
+	// This will not compile if RemoteClient does not implement the Stater interface.
+	var _ Stater = &RemoteClient{}
+
 	// invalid address
 	_, err := New("0.0.0.0")
 	if err == nil {
@@ -51,27 +59,23 @@ func TestNew(t *testing.T) {
 	}
 
 	// without prefix
-	c, err := New("0.0.0.0:1000")
-	client := c.(*RemoteClient)
-	if err != nil {
-		t.Fatal(err)
-	}
+	client, _ := New("0.0.0.0:1000")
 
 	b := &bytes.Buffer{}
 	client.buf = bufio.NewReadWriter(bufio.NewReader(b), bufio.NewWriter(b))
 
-	c.Count("test", 1)
+	client.Count("test", 1)
 	expected := "test:1|c"
 	if b := b.String(); b != expected {
 		t.Fatalf("expected %s, got %s", expected, b)
 	}
 
 	// with prefix
-	c2, err := New("0.0.0.0:1000", "prefix")
-	client2 := c2.(*RemoteClient)
+	client2, err := New("0.0.0.0:1000", "prefix")
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer client2.Close()
 
 	b.Reset()
 	client2.buf = client.buf
@@ -95,7 +99,44 @@ func TestClose(t *testing.T) {
 	if err != ErrConnectionClosed {
 		t.Error("closed connection, should have returned ConnectionClosedErr")
 	}
+}
 
+func TestMultiClose(t *testing.T) {
+	c, err := New("0.0.0.0:1000")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c.Close()
+	c.Close()
+	c.Close()
+}
+
+func TestSubstater(t *testing.T) {
+	c, err := New("0.0.0.0:1000", "prefix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	c2 := c.Substater("extra")
+	if c.conn != c2.conn {
+		t.Errorf("should have some connection")
+	}
+
+	if &c.writeMutex != &c2.writeMutex {
+		t.Errorf("should have some mutexes")
+	}
+
+	if p := c2.prefix; string(p) != "prefix.extra" {
+		t.Errorf("incorrect prefix, got %v", p)
+	}
+
+	// with leading dot
+	c2 = c.Substater(".extra")
+	if p := c2.prefix; string(p) != "prefix.extra" {
+		t.Errorf("incorrect prefix, got %v", string(p))
+	}
 }
 
 func TestCount(t *testing.T) {
