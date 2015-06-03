@@ -110,22 +110,34 @@ func New(address string, prefix ...string) (*RemoteClient, error) {
 	return client, nil
 }
 
-// Substater returns another RemoteClient using the same connection but appending
-// to the stats prefix. A dot (.) will be added between the current prefix and extraPrefix
-// if there isn't one there already.
-func (client *RemoteClient) Substater(extraPrefix string) *RemoteClient {
+// Substater returns another RemoteClient using the same connection, optionally
+// allowing an extra prefix to be added. This can be used to have clients with the
+// same connection but with different sampling rates. A dot (.) will be added
+// between the current prefix and extraPrefix if there isn't one there already.
+func (client *RemoteClient) Substater(extraPrefix ...string) *RemoteClient {
 	newClient := &RemoteClient{
 		ReconnectDelay: client.ReconnectDelay,
 		DefaultRate:    client.DefaultRate,
 		connection:     client.connection,
 	}
 
-	if extraPrefix[0] == '.' {
-		newClient.prefix = append(client.prefix, []byte(extraPrefix)...)
-	} else {
-		newClient.prefix = append(client.prefix, '.')
-		newClient.prefix = append(newClient.prefix, []byte(extraPrefix)...)
+	ep := ""
+	if len(extraPrefix) != 0 {
+		ep = extraPrefix[0]
 	}
+
+	if ep == "" {
+		newClient.prefix = client.prefix
+		return newClient
+	}
+
+	if ep[0] == '.' {
+		newClient.prefix = append(client.prefix, []byte(ep)...)
+		return newClient
+	}
+
+	newClient.prefix = append(client.prefix, '.')
+	newClient.prefix = append(newClient.prefix, []byte(ep)...)
 
 	return newClient
 }

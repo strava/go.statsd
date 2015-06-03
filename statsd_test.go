@@ -137,6 +137,12 @@ func TestSubstater(t *testing.T) {
 	if p := c2.prefix; string(p) != "prefix.extra" {
 		t.Errorf("incorrect prefix, got %v", string(p))
 	}
+
+	// without a prefix
+	c2 = c.Substater()
+	if p := c2.prefix; string(p) != "prefix" {
+		t.Errorf("incorrect prefix, got %v", string(p))
+	}
 }
 
 func TestCount(t *testing.T) {
