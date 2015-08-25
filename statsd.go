@@ -53,6 +53,14 @@ var (
 	ErrConnectionWrite = errors.New("wrote no bytes")
 )
 
+// Random is the random source for statsd rate limiting/throttling.
+// It is initialized at startup using the current nanoseconds as the seed.
+var Random *rand.Rand
+
+func init() {
+	Random = rand.New(rand.NewSource(time.Now().UnixNano()))
+}
+
 // Stater is the interface for posting to StatsD. It is implemented by
 // a NoopClient (used for testing and local environments) and the RemoteClient
 // which actually creates a connection to the server.
@@ -290,7 +298,7 @@ func (client *RemoteClient) Close() error {
 // and sends it to the server.
 func (client *RemoteClient) submit(stat string, value []byte, rate float32) error {
 	if rate < 1 {
-		if rand.Float32() < rate {
+		if Random.Float32() < rate {
 			// value = fmt.Sprintf("%s|@%f", value, rate)
 			value = append(value, '|', '@')
 			value = strconv.AppendFloat(value, float64(rate), 'f', -1, 32)
