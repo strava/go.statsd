@@ -53,12 +53,15 @@ var (
 	ErrConnectionWrite = errors.New("wrote no bytes")
 )
 
-// Random is the random source for statsd rate limiting/throttling.
+// randSource is the random source for statsd rate limiting/throttling.
 // It is initialized at startup using the current nanoseconds as the seed.
-var Random *rand.Rand
+var (
+	randSource *rand.Rand
+	randLock   sync.Mutex // FYI rand objects are not thread safe, so need a lock.
+)
 
 func init() {
-	Random = rand.New(rand.NewSource(time.Now().UnixNano()))
+	randSource = rand.New(rand.NewSource(time.Now().UnixNano()))
 }
 
 // Stater is the interface for posting to StatsD. It is implemented by
@@ -297,8 +300,16 @@ func (client *RemoteClient) Close() error {
 // submit formats the statsd event data, handles sampling, and prepares it,
 // and sends it to the server.
 func (client *RemoteClient) submit(stat string, value []byte, rate float32) error {
+	if rate == 0 {
+		return nil
+	}
+
 	if rate < 1 {
-		if Random.Float32() < rate {
+		randLock.Lock() // rand objects are not thread safe.
+		r := randSource.Float32()
+		randLock.Unlock()
+
+		if r < rate {
 			// value = fmt.Sprintf("%s|@%f", value, rate)
 			value = append(value, '|', '@')
 			value = strconv.AppendFloat(value, float64(rate), 'f', -1, 32)
