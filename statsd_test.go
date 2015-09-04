@@ -112,14 +112,14 @@ func TestMultiClose(t *testing.T) {
 	c.Close()
 }
 
-func TestSubstater(t *testing.T) {
+func TestRemoteClientSubstater(t *testing.T) {
 	c, err := New("0.0.0.0:1000", "prefix")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer c.Close()
 
-	c2 := c.Substater("extra")
+	c2 := c.Substater("extra").(*RemoteClient)
 	if c.conn != c2.conn {
 		t.Errorf("should have some connection")
 	}
@@ -133,13 +133,13 @@ func TestSubstater(t *testing.T) {
 	}
 
 	// with leading dot
-	c2 = c.Substater(".extra")
+	c2 = c.Substater(".extra").(*RemoteClient)
 	if p := c2.prefix; string(p) != "prefix.extra" {
 		t.Errorf("incorrect prefix, got %v", string(p))
 	}
 
 	// without a prefix
-	c2 = c.Substater()
+	c2 = c.Substater().(*RemoteClient)
 	if p := c2.prefix; string(p) != "prefix" {
 		t.Errorf("incorrect prefix, got %v", string(p))
 	}

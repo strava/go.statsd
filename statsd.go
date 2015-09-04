@@ -72,6 +72,10 @@ type Stater interface {
 	CountMultiple(stat string, count int, rate ...float32) error
 	Measure(stat string, delta time.Duration, rate ...float32) error
 	Gauge(stat string, value interface{}) error
+
+	Substater(extraPrefix ...string) Stater
+	SetDefaultRate(rate float32)
+
 	Close() error
 }
 
@@ -125,7 +129,7 @@ func New(address string, prefix ...string) (*RemoteClient, error) {
 // allowing an extra prefix to be added. This can be used to have clients with the
 // same connection but with different sampling rates. A dot (.) will be added
 // between the current prefix and extraPrefix if there isn't one there already.
-func (client *RemoteClient) Substater(extraPrefix ...string) *RemoteClient {
+func (client *RemoteClient) Substater(extraPrefix ...string) Stater {
 	newClient := &RemoteClient{
 		ReconnectDelay: client.ReconnectDelay,
 		DefaultRate:    client.DefaultRate,
@@ -151,6 +155,13 @@ func (client *RemoteClient) Substater(extraPrefix ...string) *RemoteClient {
 	newClient.prefix = append(newClient.prefix, []byte(ep)...)
 
 	return newClient
+}
+
+// SetDefaultRate sets the default rate for the stater.
+// As a function so it can be part of the Stater interface to make
+// set the default rate more flexible.
+func (client *RemoteClient) SetDefaultRate(rate float32) {
+	client.DefaultRate = rate
 }
 
 func (client *RemoteClient) connect() error {
@@ -396,6 +407,15 @@ func (NoopClient) Measure(stat string, delta time.Duration, rate ...float32) err
 // Gauge on NoopClient is a noop and does not require and internet connection.
 func (NoopClient) Gauge(stat string, value interface{}) error {
 	return nil
+}
+
+// Substater on NoopClient is a noop and does not require and internet connection.
+func (n NoopClient) Substater(extraPrefix ...string) Stater {
+	return n
+}
+
+// SetDefaultRate on NoopClient is a noop and does not require and internet connection.
+func (NoopClient) SetDefaultRate(rate float32) {
 }
 
 // Close on NoopClient is a noop and does not require and internet connection.
