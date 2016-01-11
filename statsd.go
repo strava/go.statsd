@@ -1,25 +1,3 @@
-/*The MIT License (MIT)
-
-Copyright (c) 2013 Strava
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
-
 // Package statsd implements a small client for StatsD, https://github.com/etsy/statsd
 // For detailed documentation and examples see README.md
 package statsd
@@ -336,7 +314,7 @@ func (client *RemoteClient) submit(stat string, value []byte, rate float32) erro
 		message = append(message, '.')
 	}
 
-	// This loop removes the need for the intermediate string -> []byte convertion into append
+	// This loop removes the need for the intermediate string -> []byte conversion into append
 	// message = append(message, []byte(stat)...)
 	for i := 0; i < len(stat); i++ {
 		message = append(message, stat[i])
@@ -349,7 +327,7 @@ func (client *RemoteClient) submit(stat string, value []byte, rate float32) erro
 	if err != nil {
 		connectError := client.connect()
 
-		// reconnect successed so try again with this one.
+		// reconnect succeeded so try again with this one.
 		if connectError == nil {
 			_, err := client.send(message)
 			return err
