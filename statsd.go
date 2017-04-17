@@ -14,7 +14,7 @@ import (
 )
 
 // DefaultClient is used by package functions statsd.Count, statsd.Measure, statsd.Gauge functions.
-var DefaultClient Stater = NoopClient{}
+	var DefaultClient Stater = NoopClient{}
 
 // DefaultRate is the rate used for Measure and Count calls if none is provided.
 var DefaultRate float32 = 1.0
